@@ -1,17 +1,18 @@
 ---
-description: "QA pre-merge sign-off. Runs the full Step 7 checklist: AC→test-task mapping, stub scan, /speckit.analyze consistency, constitution compliance, scope-drift check, traceability chain. Outputs Blocker/Major/Minor table for the PR."
+description: "QA pre-merge sign-off: item→test-task mapping, stub scan, /speckit-analyze consistency, constitution compliance, scope-drift, traceability chain. Outputs a Blocker/Major/Minor table. Read-only."
+argument-hint: "[--strict] [--skip-analyze] [--base main]"
 ---
 
 # QA Pre-Merge Review
 
-Run the complete QA Step 7 pre-merge checklist for the current feature branch.
-This is the **final QA gate before PR approval**.
+**QA lane — the QA engineer's final step on the opened PR** (last in
+`test-plan → test-generate → test-coverage → test-gaps → test-review`).
 
-The command is the automated equivalent of the QA sign-off checklist in the team's
-SDD Testing Process. It does not replace human judgment on test quality or product
-correctness — it verifies the *structural* completeness of the testing artefacts.
+Run the full QA pre-merge checklist for the current feature branch — the final QA gate
+before PR approval. It verifies the **structural** completeness of the testing artefacts
+against the stock Spec Kit feature; it does not replace human judgment on product correctness.
 
-Read-only — never modifies any file.
+**Read-only** — never modifies any file.
 
 ## User Input
 
@@ -19,129 +20,115 @@ Read-only — never modifies any file.
 $ARGUMENTS
 ```
 
-Consider user input before proceeding. The user may specify:
+The user may specify:
 - `--strict` — treat all Major findings as Blockers
-- `--skip-analyze` — skip running /speckit.analyze (if already run separately)
-- `--feature specs/NNN-name` — target a specific feature folder explicitly
+- `--skip-analyze` — reuse the last `/speckit-analyze` output instead of re-running it
+- `--base main` — diff base branch (default `main`)
+- `--feature specs/NNN-name` — target a specific feature folder
 
 ## Prerequisites
 
-1. Confirm you are inside a git repository with a clean or committed working tree.
-2. Locate `specs/NNN-*/spec.md` on the current branch. If multiple feature folders have
-   changed on this branch, audit all of them.
-3. Read `spec.md`, `plan.md`, `tasks.md` for each feature folder changed in this branch.
+1. Confirm a git repo with a committed/clean working tree.
+2. Resolve the feature directory:
+   `.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks`
+   Parse `FEATURE_DIR`. If several feature folders changed on this branch, review each.
+3. Read `spec.md`, `plan.md`, `tasks.md` for each changed feature folder.
 4. Read `.specify/memory/constitution.md`.
-5. Locate all test files added or modified in this branch (`git diff --name-only main`).
-6. Locate `testplan-NNN-*.md` if present.
-7. Run the equivalent of `/speckit.analyze` inline (consistency check).
+5. List test/source files changed on the branch: `git diff --name-only <base>...HEAD`.
+6. Read `FEATURE_DIR/test-plan.md` and `FEATURE_DIR/checklists/*.md` if present.
+7. Run `/speckit-analyze` inline (or reuse last output with `--skip-analyze`).
 
 ## Outline
 
-### Step 1 — AC → Test Task Mapping (mirrors /speckit.test.tasksaudit)
+### Step 1 — Item → Test-Task Mapping (mirrors /speckit-test-tasksaudit)
 
-For each AC-N in spec.md:
-- Is there a `T00x [P]` test task in tasks.md? → Missing = **Blocker**
-- Does the test task description name the AC and specific behaviour? → Vague = **Major**
-- Does the test task have an automation tag `[MANUAL]`, `[AUTO]`, or `[BOTH]`? → Missing = **Minor**
+For each **P1 Acceptance Scenario and Functional Requirement** (the gated items):
+- A **unit/contract** test task exists in tasks.md (identified by Tests subsection / test path,
+  **not** `[P]`)? Missing = **Blocker** (the TDD gate must have held); `--advisory` downgrades to Minor.
+- The task names the specific behaviour? Vague = **Major**.
+
+For **`SC-###`** and the QA layers (integration/E2E/regression/perf/a11y): check them against
+`FEATURE_DIR/test-plan.md` instead — a planned-but-absent layer at merge time is a **Major**.
 
 ### Step 2 — Stub Test Scan
 
-Scan all test files changed on this branch:
-- Search for: `expect(true)`, `.toBe(true)`, `toBeTruthy()` with no setup, `.todo`, `.skip`, `throw new Error('TODO')`, `raise NotImplementedError`
-- Flag each occurrence with file:line
-- Any stub in a P1 AC test = **Blocker**
-- Any stub in a P2+ test = **Major**
+Scan test files changed on the branch for: `expect(true)`, `.toBe(true)`, bare `toBeTruthy()`,
+`.todo`, `.skip`, `xit`/`xdescribe`/`it.skip`, `@pytest.mark.skip`, `throw new Error('TODO')`,
+`raise NotImplementedError`, empty bodies. Flag each with `file:line`.
+- Stub on a P1 item = **Blocker**; on a P2/P3 item = **Major**.
 
-### Step 3 — AC Coverage Spot-Check (mirrors /speckit.test.coverage)
+### Step 3 — Coverage Spot-Check (mirrors /speckit-test-coverage)
 
-For each AC-N:
-- Does a test file exist with an `AC-N` label (Strong confidence)? → ✅
-- Does a test file exist with keyword match only (Medium)? → ⚠️ **Minor** — suggest label fix
-- No test file at all? → **Blocker**
+For each item:
+- Test file with the item ID in its label (Strong) → ✅
+- Keyword-only match (Medium) → **Minor** (suggest label fix)
+- No real test at all for a P1 scenario/FR → **Blocker** (`--advisory` downgrades to Major)
 
-### Step 4 — /speckit.analyze Consistency Check
+### Step 4 — /speckit-analyze Consistency
 
-Run the equivalent of `/speckit.analyze` (or reference its last output if `--skip-analyze`):
-- Diff vs tasks.md: code does exactly the tasks — nothing extra = ✅; scope creep = **Major**
-- Code below tasks: incomplete implementation = **Blocker**
-- Constitution violations = **Blocker**
-- Reuse violations (code duplicates existing module) = **Major**
+Run/reuse `/speckit-analyze` and fold in its findings:
+- Requirements with zero task coverage = **Blocker** (matches analyze CRITICAL)
+- Constitution MUST violations = **Blocker**
+- Duplicate/conflicting requirements, scope creep = **Major**
+- Terminology drift = **Minor**
 
 ### Step 5 — Scope-Drift Check
 
-Compare the diff (files changed in this branch) against tasks.md:
-- Files changed that are not covered by any task ID = **Major** (scope drift)
-- Task IDs in tasks.md with no corresponding diff = **Major** (incomplete implementation)
+Compare the branch diff against tasks.md:
+- Source files changed that map to no task ID = **Major** (scope drift)
+- Task IDs marked `[X]` with no corresponding diff = **Major** (claimed-but-absent)
+- Task IDs not yet `[X]` but already implemented = **Minor** (update tasks.md)
 
-### Step 6 — Traceability Chain Completeness
+### Step 6 — Traceability Chain
 
-For each AC-N, verify the full chain is intact:
-```
-spec.md AC-N → tasks.md T00x [P] → test file (label includes AC-N) → CI (green)
-```
+For each item verify `spec item → tasks.md test task → test file (label cites the ID) → CI`.
 - Any broken link = **Major**
-- Weak confidence (no AC-N label) = **Minor**
+- Weak label (no ID) = **Minor**
 
-### Step 7 — Test Plan Check
+### Step 7 — Test Plan & Checklists
 
-- Does `testplan-NNN-*.md` exist in `specs/NNN-*/`? → Missing = **Major**
-- Is the PR description expected to link it? → Flag as reminder if testplan exists but link not verifiable
+- `FEATURE_DIR/test-plan.md` present and linked in the PR? Missing = **Major**.
+- `FEATURE_DIR/checklists/*.md` all complete? Incomplete items = **Major** (Spec Kit's
+  `/speckit-implement` itself blocks on these).
 
 ### Step 8 — Constitution Compliance
 
-Read `.specify/memory/constitution.md` and check:
-- QA non-negotiables are present
-- Every flagged rule is respected in the diff
-- Any missing QA non-negotiable in constitution = **Minor** (flag for next constitution PR)
+- Every constitution MUST principle respected by the diff (test principles especially).
+- A violated principle = **Blocker**.
+- A missing-but-expected test principle (e.g., no Test-First while the team practises TDD) = **Minor** (flag for a constitution PR).
 
-### Step 9 — Compile and Output Report
-
-Output a severity table and overall gate verdict:
+### Step 9 — Report
 
 ```markdown
 ## QA Pre-Merge Review
 
 Feature: specs/001-connect-hotel-filter/
-Branch: feature/001-connect-hotel-filter
-Reviewed: spec.md ✅ | plan.md ✅ | tasks.md ✅ | constitution.md ✅
-
----
+Branch: 001-connect-hotel-filter (base: main)
+Unit gate: enforced (default; constitution: "III. Test-First (NON-NEGOTIABLE)")
+Reviewed: spec.md ✅ | plan.md ✅ | tasks.md ✅ | constitution.md ✅ | test-plan.md ✅
 
 ### Findings
+| Severity | Location | Item / Task / Rule | Issue | Suggested Fix |
+|----------|----------|--------------------|-------|---------------|
+| Blocker | tests/perf/filter.perf.ts:18 | SC-001 / T017 | `.skip` stub on a P1 item | Implement the < 500ms assertion |
+| Major | tests/unit/result-count.test.ts:42 | FR-002 | Label omits FR-002 — chain broken | Rename to "FR-002: …" |
+| Major | — | tasks.md T015 | Marked [X] but no diff | Confirm done or unmark |
+| Minor | — | constitution | No Integration-Testing principle | Propose in next constitution PR |
 
-| Severity | File / Location | AC / Task / Rule | Issue | Suggested Fix |
-|----------|----------------|------------------|-------|---------------|
-| Blocker | tests/e2e/StarRatingFilter.a11y.test.ts:18 | AC-4 / T004 | Test body is `throw new Error('TODO')` — stub test on a P1 AC | Implement test assertions before merge |
-| Major | tests/unit/StarRatingFilter.test.ts:42 | AC-3 | Test label does not include AC-3 reference — traceability chain broken | Rename to "AC-3: result count updates..." |
-| Major | — | tasks.md T005 | Task T005 has no corresponding diff — implementation may be incomplete | Confirm T005 is done or remove from tasks.md |
-| Minor | tasks.md T004 | AC-4 | Test task has no automation tag | Add [BOTH] to T004 |
-
----
-
-### AC Coverage Summary
-
-| AC | Test Task | Test File | Traceability | Status |
-|----|-----------|-----------|--------------|--------|
-| AC-1 | T001 ✅ | ✅ Strong | ✅ Complete | ✅ |
-| AC-2 | T002 ✅ | ✅ Strong | ✅ Complete | ✅ |
-| AC-3 | T003 ✅ | ⚠️ Medium | ⚠️ Weak label | ⚠️ |
-| AC-4 | T004 ✅ | ❌ Stub | ❌ Broken | ❌ |
-
----
+### Coverage Summary
+| Item | Test Task | Test File | Traceability | Status |
+|------|-----------|-----------|--------------|--------|
+| US1-AS1 | T010 ✅ | ✅ Strong | ✅ Complete | ✅ |
+| FR-002 | T016 ✅ | ⚠️ Medium | ⚠️ Weak label | ⚠️ |
+| SC-001 | T017 ✅ | ❌ Stub | ❌ Broken | ❌ |
 
 ### Manual Verification Required
-
-The following items cannot be verified automatically — a human must check:
-
 | Item | Why Manual |
 |------|-----------|
-| AC-4 keyboard flow | Keyboard navigation requires a human tester; axe-core alone is insufficient |
-| Product correctness of AC-2 | Pagination filter persistence requires clicking through the live UI |
-
----
+| US2-AS1 keyboard flow | Keyboard navigation needs a human; axe-core alone is insufficient |
+| FR-001 product correctness | Pagination persistence needs a live click-through |
 
 ### Gate Verdict
-
 | Category | Count |
 |----------|-------|
 | 🔴 Blockers | 1 |
@@ -149,27 +136,32 @@ The following items cannot be verified automatically — a human must check:
 | 🟡 Minor | 1 |
 
 **GATE: ❌ BLOCKED**
-Resolve all Blockers before requesting PR approval.
-Majors must be resolved or documented with justification.
-Minors may be deferred to a follow-up ticket.
+Resolve all Blockers before requesting approval. Majors must be fixed or justified in a PR comment. Minors may be deferred.
 ```
 
-**When all clean:**
+**When clean:**
 ```markdown
 ### Gate Verdict
 Blockers: 0 | Major: 0 | Minor: 0
 **GATE: ✅ APPROVED**
-QA structural checks passed. Human sign-off on manual test cases and product judgment still required.
+Structural QA checks passed. Human sign-off on manual cases and product correctness still required.
+```
+
+End with a CI line:
+```
+SPECTEST REVIEW: 1 blocker, 2 major, 1 minor — BLOCKED
 ```
 
 ## Rules
 
-- **Read-only** — never modify any file on the branch
-- **Severity hierarchy**: Blocker = PR must not merge until fixed; Major = must resolve or explicitly justify in PR comment; Minor = should fix, may defer
-- **Stub tests on P1 ACs are always Blockers** — no exceptions; flag with exact file:line
-- **Missing test plan is Major, not Minor** — the test plan is a required deliverable per the team's QA process
-- **Manual verification section is mandatory** — always list what cannot be verified automatically and why; this section is for the human reviewer
-- **Constitution violations are Blockers** — any rule in constitution.md that is violated by the diff is a Blocker, not a Major
-- **Traceability weak labels are Minor** — a Medium-confidence test label (no AC-N in label) is a Minor finding; the fix is a label rename, not a new test
-- **Gate verdict is explicit** — always end with `GATE: ✅ APPROVED` or `GATE: ❌ BLOCKED` on its own line; this makes it parseable by CI or PR automation
-- **This does not replace human judgment** — always include the Manual Verification section; QA sign-off on product correctness is the human's responsibility, not this command's
+- **Read-only** — never modify any file on the branch.
+- **Severity hierarchy** — Blocker = must not merge; Major = fix or justify in PR; Minor = should fix, may defer.
+- **Unit gate held** — a P1 scenario/FR with no unit/contract test is a Blocker (the pre-implement TDD gate should have caught it); `--advisory` downgrades. SC and QA layers are judged against test-plan.md (planned-but-absent = Major).
+- **`[P]` is parallelism** — identify test tasks by Tests subsection / test path, never by `[P]`.
+- **Stub on P1 = Blocker** — always, flagged with exact `file:line`.
+- **Missing test plan = Major; incomplete checklist = Major** — both are required deliverables; checklists additionally block `/speckit-implement`.
+- **Manual Verification section mandatory** — always list what cannot be auto-verified and why.
+- **Constitution violations = Blocker** — any violated MUST principle.
+- **Fold in /speckit-analyze** — do not duplicate its logic; reuse its findings and map their severities.
+- **Verdict explicit** — always end with `GATE: ✅ APPROVED` / `GATE: ❌ BLOCKED` and the `SPECTEST REVIEW:` line.
+- **Not a substitute for human judgment** — structural checks only; product correctness is the reviewer's call.

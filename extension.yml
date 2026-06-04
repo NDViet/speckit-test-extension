@@ -3,12 +3,14 @@ schema_version: "1.0"
 extension:
   id: spectest-sdet
   name: "SpecTest — SDET Edition"
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
-    Expert QA/SDET testing layer for the SDD workflow.
-    Generates test scaffolds from AC-based spec.md, audits tasks.md [P] test tasks,
-    enforces constitution.md QA rules, maps AC-level coverage, finds untested ACs,
-    and produces QA test plans and pre-merge sign-off reports.
+    Expert QA/SDET testing layer for the Spec Kit (SDD) workflow.
+    Anchored on the stock spec.md artefacts — Acceptance Scenarios (US{n}-AS{m}),
+    Functional Requirements (FR-###), and buildable Success Criteria (SC-###).
+    Audits tasks.md test tasks, scaffolds tests from spec items, maps requirement-level
+    coverage, finds untested items, writes QA test plans, and runs a pre-merge sign-off.
+    Defers to .specify/memory/constitution.md to decide whether tests are mandatory.
   author: "Viet Nguyen Duc / SDET"
   license: "MIT"
 
@@ -17,71 +19,80 @@ requires:
 
 provides:
   commands:
-    - name: speckit.test.generate
-      file: commands/speckit.test.generate.md
-      description: >
-        Generate test scaffolds from spec.md Acceptance Criteria.
-        Creates test files tagged with AC-N references, organised by AC,
-        following the team's test framework (per constitution.md).
-        Never overwrites existing test files.
-
     - name: speckit.test.tasksaudit
       file: commands/speckit.test.tasksaudit.md
       description: >
-        Audit tasks.md to verify every AC-N in spec.md has a corresponding
-        T00x [P] test task. Flags missing test tasks, stub-test tasks, and
-        tasks not tagged [MANUAL]/[AUTO]/[BOTH]. The QA gate before
-        /speckit.implement runs.
+        Pre-implementation gate for the unit-test plan. For every P1 spec item (Acceptance
+        Scenarios, FR-###) it verifies a UNIT or CONTRACT (TDD, fail-first) test task exists in
+        tasks.md. Default is audit-only (read-only): reports BLOCKED and prints the task lines to
+        add. With --write a developer applies them in place (additive only; never deletes or
+        renumbers) and reviews before implementing. The before_implement hook runs audit-only, so
+        the gate never mutates tasks.md unattended. Unit/contract is the mandatory development
+        gate; integration/E2E/regression/perf/a11y are QA-owned and advisory here (planned in
+        test-plan.md, after implementation). Test tasks are identified by the Tests subsection /
+        test path, not by the [P] marker.
+
+    - name: speckit.test.generate
+      file: commands/speckit.test.generate.md
+      description: >
+        Generate failing (TDD) test scaffolds from spec.md items, labelled with the item ID
+        (US{n}-AS{m} / FR-### / SC-###) for traceability, in the framework declared by
+        constitution.md / plan.md. Maps Given/When/Then to Arrange/Act/Assert. Never overwrites.
 
     - name: speckit.test.coverage
       file: commands/speckit.test.coverage.md
       description: >
-        Map every spec.md AC-N to existing test files and calculate
-        AC-level coverage. Rates each mapping Strong/Medium/Weak.
-        Compares against constitution.md thresholds. Read-only.
+        Map every spec.md testable item to existing test files and rate each mapping
+        Strong/Medium/Weak (Stub = 0%). Compares against the constitution threshold. Read-only.
 
     - name: speckit.test.gaps
       file: commands/speckit.test.gaps.md
       description: >
-        Find AC-N entries in spec.md with no matching test tasks in tasks.md
-        and no matching test files. Classifies gaps by severity. Outputs a
-        CI-friendly one-line summary.
+        Find spec.md items with no test task and/or no test file, classify by severity
+        (risk overrides priority), phase-aware. CI-friendly one-line summary. Read-only.
 
     - name: speckit.test.plan
       file: commands/speckit.test.plan.md
       description: >
-        Generate a QA test plan (testplan-NNN-feature.md) inside the
-        specs/NNN-*/ folder. Includes AC traceability matrix, manual and
-        automated test cases, entry/exit criteria, environment requirements,
-        and risk assessment.
+        Generate FEATURE_DIR/test-plan.md from spec.md, plan.md, tasks.md, and constitution.md,
+        with an item traceability matrix, test cases, entry/exit criteria, environment, and risks.
+        Optionally seeds checklists/test.md so the plan gates /speckit-implement.
 
     - name: speckit.test.review
       file: commands/speckit.test.review.md
       description: >
-        QA pre-merge sign-off command. Runs the full Step 7 checklist:
-        AC→test-task mapping, stub-test scan, /speckit.analyze consistency,
-        constitution compliance, scope-drift check, and traceability chain
-        completeness. Outputs a Blocker/Major/Minor table for the PR.
+        QA pre-merge sign-off. Item→test-task mapping, stub scan, /speckit-analyze consistency,
+        scope-drift, traceability chain, test-plan/checklist presence, and constitution compliance.
+        Outputs a Blocker/Major/Minor table and an explicit gate verdict. Read-only.
 
+# Hooks register SpecTest commands on core Spec Kit lifecycle events.
+# Dispatched via .specify/extensions.yml; command names are invoked with dots → hyphens
+# (e.g. speckit.test.tasksaudit → /speckit-test-tasksaudit).
+#
+# Only the DEVELOPER-lane gate (tasksaudit) is hooked into the Spec Kit lifecycle, because
+# only the developer runs /speckit-tasks and /speckit-implement locally. The QA-lane commands
+# (test-plan, test-generate, test-coverage, test-gaps, test-review) are NOT hooks — the QA
+# engineer runs them by hand against the opened PR, after /speckit-implement.
 hooks:
-  after_implement:
-    command: speckit.test.gaps
+  after_tasks:
+    command: speckit.test.tasksaudit
     optional: true
-    prompt: "Scan for ACs with no matching tests?"
-    description: "After implementation, find any AC-N entries in spec.md not yet covered by tests."
+    prompt: "Audit the generated test tasks against spec.md items?"
+    description: "Advisory audit right after /speckit-tasks: surface missing test tasks early (developer)."
 
   before_implement:
     command: speckit.test.tasksaudit
     optional: false
-    prompt: "Audit test tasks before implementation starts?"
-    description: "Verify every AC has a T00x [P] test task before /speckit.implement runs."
+    prompt: "Audit the unit/TDD test-task gate before implementation starts?"
+    description: "Mandatory gate (audit-only): verify every P1 spec item has a unit/contract (TDD) test task in tasks.md before /speckit-implement; BLOCKED until the developer adds any missing ones (run /speckit-test-tasksaudit --write)."
 
 tags:
   - "testing"
   - "qa"
   - "sdet"
-  - "acceptance-criteria"
+  - "acceptance-scenarios"
+  - "functional-requirements"
   - "traceability"
   - "coverage"
   - "sdd"
-  - "expert-qa"
+  - "spec-kit"

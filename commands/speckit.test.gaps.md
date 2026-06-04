@@ -1,18 +1,21 @@
 ---
-description: "Find AC-N entries in spec.md with no matching test tasks or test files. Severity-classified. CI-friendly. Read-only."
+description: "Find spec.md testable items (Acceptance Scenarios, FR-###, SC-###) with no matching test task or test file. Severity-classified, phase-aware, CI-friendly. Read-only."
+argument-hint: "[--critical-only] [--tasks-only|--files-only] [--story US1] [--json]"
 ---
 
-# Find Untested Acceptance Criteria
+# Find Untested Specification Items
 
-Scan for ACs in spec.md that have no matching `T00x [P]` test task in tasks.md
-**and/or** no matching test file in the codebase.
+**QA lane — run by the QA engineer on the opened PR** (after `/speckit-implement`), as the
+fourth QA step: `test-plan → test-generate → test-coverage → test-gaps → test-review`.
 
-Designed for:
-- Post-`/speckit.implement` audit (triggered automatically via after_implement hook)
+Scan for testable items in `spec.md` that have no matching test task in `tasks.md` **and/or**
+no matching test file in the codebase. Built for:
+
+- PR inspection after implementation
 - Pre-merge spot-check
-- CI pipeline gap gate
+- A CI gap gate
 
-Read-only — never creates or modifies files.
+**Read-only** — never creates or modifies files.
 
 ## User Input
 
@@ -20,120 +23,100 @@ Read-only — never creates or modifies files.
 $ARGUMENTS
 ```
 
-Consider user input before proceeding. The user may specify:
-- Severity filter (e.g., "critical only", "all gaps")
-- Scope (e.g., "tasks-only" — only check tasks.md gaps; "files-only" — only check test file gaps)
-- Output format (e.g., "json", "checklist", "markdown")
-- Phase filter (e.g., "Phase 2 only" — only flag gaps for completed phases)
+The user may specify:
+- `--critical-only` — report only Critical gaps
+- `--tasks-only` / `--files-only` — restrict to task gaps or file gaps
+- `--story US1` — limit to one user story
+- `--json` / `--checklist` — output format
 
 ## Prerequisites
 
-1. Confirm you are inside a git repository.
-2. Locate `specs/NNN-*/spec.md`. Ask if ambiguous.
-3. Read `spec.md` fully. Extract all `AC-N` entries and `## Out of scope` exclusions.
-4. Read `tasks.md` fully. Extract all `T00x [P]` test tasks and their AC references.
-5. Locate test files (`**/*.test.*`, `**/*.spec.*`, `**/test_*`, `tests/`, `__tests__/`).
-6. Parse test file labels/comments for `AC-N` references.
-7. If `tasks.md` has phase markers, note which phases are marked complete — only flag gaps for complete phases.
+1. Resolve the feature directory:
+   `.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks`
+   Parse `FEATURE_DIR`. Fall back to `specs/*/spec.md` if unavailable.
+2. Read `FEATURE_DIR/spec.md` — extract the testable-item inventory and `## Assumptions`
+   (out-of-scope statements live here, not under a `## Out of scope` heading).
+3. Read `FEATURE_DIR/tasks.md` — extract test tasks (by Tests subsection / test path, **not** by `[P]`),
+   their `[US#]` labels, and which phases/stories are marked complete (`[X]`).
+4. Read `FEATURE_DIR/plan.md` and `.specify/memory/constitution.md` — risk and priority signals.
+5. Locate and parse test files for item IDs (`US{n}-AS{m}`, `FR-###`, `SC-###`) and keywords.
 
 ## Outline
 
-### Step 1 — Build Gap List
+### Step 1 — Build the Gap List
 
-For each AC-N:
+For each testable item:
 
-**Gap Type A — Missing test task in tasks.md:**
-The AC exists in spec.md but no `T00x [P]` task references it.
-Severity: BLOCKER — implementation should not proceed without a test task.
+- **Gap A — No test task**: the item exists in spec.md but no test task in tasks.md covers it.
+- **Gap B — Test task, no test file**: a test task exists but its test file has not been created.
+- **Gap C — Stub test file**: a test file exists but its bodies are all stubs (`.skip`, `.todo`,
+  `throw new Error('TODO')`, `raise NotImplementedError`, `expect(true).toBe(true)`, empty).
+- **Gap D — Weak traceability**: a real test exists but cites no item ID in its label — confidence Medium/Weak.
 
-**Gap Type B — Missing test file:**
-A `T00x [P]` task exists for the AC but the test file has not been created yet.
-Severity: depends on phase — if implementation phase is marked done, this is CRITICAL.
-
-**Gap Type C — Stub test file:**
-A test file exists but all test bodies are `TODO`/`NotImplementedError`/`.skip`.
-Severity: CRITICAL — a stub test is not coverage; it provides false confidence.
-
-**Gap Type D — Weak coverage:**
-Test exists but no `AC-N` label in describe/it — confidence is Medium or Weak.
-Severity: WARNING — coverage exists but traceability chain is incomplete.
+If both A and B apply to one item, report them together (`A + B`) on a single row.
 
 ### Step 2 — Classify Severity
 
-Each gap is classified:
+| Severity | Definition |
+|----------|-----------|
+| 🔴 Critical | Missing/stub coverage for a P1 item, or any item touching auth, payment, data-integrity, security — regardless of priority |
+| 🟡 Medium | Missing coverage for a user-facing P1/P2 item that is not security-critical |
+| 🔵 Low | Missing test for a P3 item, or a cosmetic/internal behaviour |
+| ⚠️ Warning | Weak traceability (no item ID in label) on an otherwise covered item — a label fix, not a new test |
 
-| Severity | Definition | Examples |
-|----------|-----------|---------|
-| 🔴 Critical | Missing coverage for a P1 AC; security/data-integrity AC; stub test on a P1 AC | No test for AC covering auth, payment, data loss |
-| 🟡 Medium | Missing coverage for a user-facing P1 AC that is not security-critical | Filter behaviour, UI state persistence |
-| 🔵 Low | Missing test for a P2 AC; weak label confidence on an otherwise covered AC | Cosmetic behaviour, nice-to-have |
-| ⚠️ Warning | Automation tag missing; label lacks AC-N reference; Medium/Weak confidence | Easily fixed without new test |
-
-Base severity on:
-- AC text: security, auth, payment, data-loss → 🔴 Critical
-- UI user-facing flows → 🟡 Medium
-- Cosmetic, internal, low-risk → 🔵 Low
-- Constitution.md P1 designation if present
+Base severity on the item's text and its source User Story priority (P1/P2/P3), plus any
+risk principle in the constitution.
 
 ### Step 3 — Gap Report
 
 ```markdown
-## Untested Acceptance Criteria
+## Untested Specification Items
 
 Feature: specs/001-connect-hotel-filter/
-Spec ACs: 4 | Test tasks: 3 | Test files: 2 | Gaps: 2
+Items: 5 (2 scenarios, 2 FR, 1 buildable SC) | Test tasks: 4 | Test files: 2 | Gaps: 2
 
 ### ❌ Gaps
+| # | Item | Gap | Severity | Suggested Action | Suggested File |
+|---|------|-----|----------|------------------|----------------|
+| 1 | FR-001: persist filters across pagination | B (task T015 exists, no test file) | 🔴 Critical | Scaffold the test: `/speckit-test-generate FR-001` | tests/unit/filter-persistence.test.ts |
+| 2 | FR-002: result count updates | D (label has no FR-002) | ⚠️ Warning | Rename label to cite FR-002 | tests/unit/result-count.test.ts:42 |
 
-| # | AC | Gap Type | Severity | Suggested Fix | Suggested File |
-|---|-----|----------|----------|---------------|----------------|
-| 1 | AC-4: Keyboard accessible, ARIA labels present | Type A + B: no test task, no test file | 🔴 Critical | Add T006 [P] in tasks.md; scaffold with /speckit.test.generate AC-4 | tests/e2e/StarRatingFilter.a11y.test.ts |
-| 2 | AC-3: Result count updates | Type D: test exists, label lacks AC-3 reference | ⚠️ Warning | Rename test label to include "AC-3:" | tests/unit/StarRatingFilter.test.ts:42 |
-
-### ✅ Covered ACs
-
-| AC | Test Task | Test File | Confidence |
-|----|-----------|-----------|------------|
-| AC-1 | T001 [P] ✅ | tests/unit/StarRatingFilter.test.ts | Strong |
-| AC-2 | T002 [P] ✅ | tests/integration/StarRatingFilter.pagination.test.ts | Strong |
+### ✅ Covered Items
+| Item | Test Task | Test File | Confidence |
+|------|-----------|-----------|------------|
+| US1-AS1 | T010 [US1] ✅ | tests/integration/filter.test.ts | Strong |
+| US1-AS2 | T010 [US1] ✅ | tests/integration/filter.test.ts | Strong |
 ```
 
 ### Step 4 — Prioritised Action List
 
 ```markdown
 ## Recommended Actions
-
-1. 🔴 **AC-4 — Keyboard + ARIA (Critical)**
-   - Add to tasks.md: `T006 [P] Add keyboard accessibility E2E test (AC-4) [BOTH]`
-   - Run: `/speckit.test.generate AC-4`
-   - Implement: axe-core scan + manual keyboard flow test
-   - Estimated: 1 test file, 3 test cases
-
-2. ⚠️ **AC-3 — Weak label (Warning)**
-   - Edit: `tests/unit/StarRatingFilter.test.ts` line 42
-   - Change: `"result count badge updates"` → `"AC-3: result count updates to reflect filtered set"`
-   - No new test needed — just a label update for traceability
+1. 🔴 **FR-001 — pagination persistence (Critical)**
+   - Test task `T015` exists but its file was never created; scaffold it: `/speckit-test-generate FR-001`
+   - Implement: assert the active filter persists onto page 2 (tests/unit/filter-persistence.test.ts)
+2. ⚠️ **FR-002 — weak label (Warning)**
+   - Edit tests/unit/result-count.test.ts:42 → label `"FR-002: result count updates to filtered set"` (no new test needed).
 ```
 
 ### Step 5 — CI-Friendly Summary
 
-Always output a single final line:
-
 ```
-SPECTEST GAPS: 1 critical (AC-4 no test), 1 warning (AC-3 weak label) — FAIL
+SPECTEST GAPS: 1 critical (FR-001 no test), 1 warning (FR-002 weak label) — FAIL
 ```
 or
 ```
-SPECTEST GAPS: 4 ACs, 0 gaps, 0 stubs — PASS
+SPECTEST GAPS: 5 items, 0 gaps, 0 stubs — PASS
 ```
 
 ## Rules
 
-- **Read-only** — never create or modify test files or tasks.md
-- **Phase-aware** — only flag gaps for implementation phases marked complete in tasks.md; do not flag ACs for work not yet started
-- **Stub = gap** — a stub test file (all TODO) is treated as no test for gap-counting purposes; always report it separately as a stub gap
-- **Out-of-scope is excluded** — ACs listed under `## Out of scope` in spec.md are not flagged as gaps
-- **Double-gap reporting** — if an AC has both no test task AND no test file, report both gap types together (Type A + B) rather than two separate rows
-- **Severity is based on AC content** — security, auth, payment, data-integrity ACs are always 🔴 Critical regardless of phase
-- **Actionable every time** — every gap must include a concrete suggested action, not just "add tests"
-- **CI-friendly output** — the final summary line must be parseable by a CI script: starts with `SPECTEST GAPS:`, ends with `PASS` or `FAIL`
+- **Read-only** — never create or modify test files or tasks.md.
+- **Phase-aware** — only flag file/stub gaps for stories or phases marked complete in tasks.md; do not flag work not yet started.
+- **`[P]` is parallelism** — identify test tasks by the Tests subsection or a test path, never by `[P]`.
+- **Stub = gap** — a stub test counts as no test; always report it as a stub gap, separately.
+- **Out-of-scope excluded** — items the spec's `## Assumptions` mark out of scope are not gaps.
+- **Double-gap merged** — report "no task AND no file" as one `A + B` row, not two.
+- **Risk overrides priority** — auth/payment/security/data-integrity items are always 🔴 Critical, even if P3.
+- **Always actionable** — every gap row carries a concrete action, never just "add tests".
+- **CI line** — final summary starts with `SPECTEST GAPS:` and ends with `PASS` or `FAIL`.
