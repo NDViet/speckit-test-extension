@@ -1,0 +1,87 @@
+schema_version: "1.0"
+
+extension:
+  id: spectest-sdet
+  name: "SpecTest — SDET Edition"
+  version: "1.0.0"
+  description: >
+    Expert QA/SDET testing layer for the SDD workflow.
+    Generates test scaffolds from AC-based spec.md, audits tasks.md [P] test tasks,
+    enforces constitution.md QA rules, maps AC-level coverage, finds untested ACs,
+    and produces QA test plans and pre-merge sign-off reports.
+  author: "Viet Nguyen Duc / SDET"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.13"
+
+provides:
+  commands:
+    - name: speckit.test.generate
+      file: commands/speckit.test.generate.md
+      description: >
+        Generate test scaffolds from spec.md Acceptance Criteria.
+        Creates test files tagged with AC-N references, organised by AC,
+        following the team's test framework (per constitution.md).
+        Never overwrites existing test files.
+
+    - name: speckit.test.tasksaudit
+      file: commands/speckit.test.tasksaudit.md
+      description: >
+        Audit tasks.md to verify every AC-N in spec.md has a corresponding
+        T00x [P] test task. Flags missing test tasks, stub-test tasks, and
+        tasks not tagged [MANUAL]/[AUTO]/[BOTH]. The QA gate before
+        /speckit.implement runs.
+
+    - name: speckit.test.coverage
+      file: commands/speckit.test.coverage.md
+      description: >
+        Map every spec.md AC-N to existing test files and calculate
+        AC-level coverage. Rates each mapping Strong/Medium/Weak.
+        Compares against constitution.md thresholds. Read-only.
+
+    - name: speckit.test.gaps
+      file: commands/speckit.test.gaps.md
+      description: >
+        Find AC-N entries in spec.md with no matching test tasks in tasks.md
+        and no matching test files. Classifies gaps by severity. Outputs a
+        CI-friendly one-line summary.
+
+    - name: speckit.test.plan
+      file: commands/speckit.test.plan.md
+      description: >
+        Generate a QA test plan (testplan-NNN-feature.md) inside the
+        specs/NNN-*/ folder. Includes AC traceability matrix, manual and
+        automated test cases, entry/exit criteria, environment requirements,
+        and risk assessment.
+
+    - name: speckit.test.review
+      file: commands/speckit.test.review.md
+      description: >
+        QA pre-merge sign-off command. Runs the full Step 7 checklist:
+        AC→test-task mapping, stub-test scan, /speckit.analyze consistency,
+        constitution compliance, scope-drift check, and traceability chain
+        completeness. Outputs a Blocker/Major/Minor table for the PR.
+
+hooks:
+  after_implement:
+    command: speckit.test.gaps
+    optional: true
+    prompt: "Scan for ACs with no matching tests?"
+    description: "After implementation, find any AC-N entries in spec.md not yet covered by tests."
+
+  before_implement:
+    command: speckit.test.tasksaudit
+    optional: false
+    prompt: "Audit test tasks before implementation starts?"
+    description: "Verify every AC has a T00x [P] test task before /speckit.implement runs."
+
+tags:
+  - "testing"
+  - "qa"
+  - "sdet"
+  - "acceptance-criteria"
+  - "traceability"
+  - "coverage"
+  - "sdd"
+  - "expert-qa"
