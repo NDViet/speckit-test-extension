@@ -284,7 +284,7 @@ Or from a local folder (offline / development):
 specify extension add --from ./speckit-test-extension
 ```
 
-Requires Spec Kit ≥ 0.8.13.
+Requires Spec Kit ≥ 0.9.0.
 
 ---
 
@@ -343,4 +343,4 @@ Based on [spec-kit-spectest v1.0.0](https://github.com/Quratulain-bilal/spec-kit
 
 ## License
 
-MIT — same as
+MIT �
