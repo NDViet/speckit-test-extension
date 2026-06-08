@@ -284,7 +284,7 @@ Or from a local folder (offline / development):
 specify extension add --from ./speckit-test-extension
 ```
 
-Requires Spec Kit ≥ 0.9.0.
+Requires Spec Kit ≥ 0.8.0.
 
 ---
 
