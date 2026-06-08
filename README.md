@@ -1,148 +1,134 @@
-# speckit-test-extension — SDET Edition
+# speckit-test-extension -- Quality Built-In
 
-A [Spec Kit](https://github.com/github/spec-kit) extension built from the perspective of an
-Expert QA Engineer / SDET. It adds the testing layer that connects a feature's `spec.md` to
-test tasks, test files, and pre-merge sign-off — closing the loop that Spec Kit's core
-workflow leaves to manual effort.
+A [Spec Kit](https://github.com/github/spec-kit) extension that bakes quality and testing
+into the core SDD workflow as a built-in step at every lifecycle event, not as a separate
+role or PR-time afterthought. Hooks attach to `/speckit-plan`, `/speckit-tasks`,
+`/speckit-implement`, and `/speckit-analyze` so the work happens automatically.
 
 It is anchored on the **stock Spec Kit artefacts** (no custom spec format required) and
-defers to your project `constitution.md` to decide how strict the QA gates are.
-
-Adapted from [spec-kit-spectest](https://github.com/Quratulain-bilal/spec-kit-spectest)
-by Quratulain-bilal (MIT). See [Differences](#differences-from-upstream).
+defers to your project `constitution.md` to decide how strict the gates are.
 
 ---
 
 ## Problem
 
-Spec Kit's core workflow (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks` →
-`/speckit-implement`) produces a rich `spec.md` (prioritized user stories with Acceptance
-Scenarios, Functional Requirements, Success Criteria) and a `tasks.md` breakdown — but the
-testing layer is left manual:
+Spec Kit's core workflow produces a rich `spec.md` (prioritized user stories with Acceptance
+Scenarios, Functional Requirements, Success Criteria) and a `tasks.md` breakdown -- but the
+testing layer is not enforced by the core commands themselves:
 
-- Nothing checks that `tasks.md` has a test task for each testable spec item
-- Tests get written from memory, not from spec — traceability breaks
-- There is no measure of "which spec items are actually tested" before the PR is approved
-- QA pre-merge checks are ad-hoc
+- Nothing in `/speckit-plan` decides how each spec item will be tested
+- Nothing in `/speckit-tasks` guarantees a test task per testable spec item
+- Tests get written from memory, not from spec -- traceability breaks
+- There is no requirement-level measure of "which spec items are actually tested" before merge
+- Pre-merge sign-off is ad-hoc and leaves no tracked record
 
-This extension closes those gaps, using the spec's own identifiers.
+This extension closes those gaps by hooking quality work into the core workflow at every
+lifecycle event.
 
 ---
 
-## Testable items — the unit of traceability
+## Testable items -- the unit of traceability
 
-Everything keys off the **stock `spec.md`**, not a custom `AC-N` format. Three item types:
+Everything keys off the **stock `spec.md`**:
 
 | Item | Where in spec.md | ID scheme |
 |------|------------------|-----------|
-| **Acceptance Scenario** | `### User Story N (Priority: Px)` → `**Acceptance Scenarios**` (Given/When/Then) | `US{n}-AS{m}` (priority inherited from the story) |
+| **Acceptance Scenario** | `### User Story N (Priority: Px)` -> `**Acceptance Scenarios**` (Given/When/Then) | `US{n}-AS{m}` (priority inherited from the story) |
 | **Functional Requirement** | `### Functional Requirements` | `FR-###` |
-| **Success Criterion** | `## Success Criteria` → Measurable Outcomes | `SC-###` (only the *buildable* ones — perf/security/availability — are gated; business KPIs are not) |
+| **Success Criterion** | `## Success Criteria` -> Measurable Outcomes | `SC-###` (only the *buildable* ones -- perf/security/availability -- are gated; business KPIs are not) |
 
 Every generated test labels itself with the item ID, so the chain
-`spec item → tasks.md test task → test file → CI` is checkable end to end.
+`spec item -> plan.md Testing Strategy -> tasks.md test task -> test file -> review.md`
+is checkable end to end.
 
 ---
 
-## Commands
+## Commands (4 total -- all hook-driven)
 
-| Command | Lane — when | What it does |
-|---------|------|--------------|
-| `/speckit-test-tasksaudit` | 👤 **Dev** — after `/speckit-tasks`, before `/speckit-implement` (★) | **Pre-implementation gate.** Audits that every P1 spec item has a **unit/contract (TDD) test task** and **blocks** if not (default = read-only). `--write` adds the missing tasks to `tasks.md` so `/speckit-implement` builds them. Higher layers advisory here. |
-| `/speckit-test-plan` | 🔎 **QA** — on the PR (1st) | Write `FEATURE_DIR/test-plan.md` — traceability matrix, **impact analysis**, and **layer ownership/timing** (dev unit pre-implement, QA layers post-implement); optionally seed `checklists/test.md`. |
-| `/speckit-test-generate` | 🔎 **QA** — on the PR (2nd) | Scaffold the QA-owned layers (integration/E2E/regression/perf/a11y) and any item still missing a test. |
-| `/speckit-test-coverage` | 🔎 **QA** — on the PR (3rd) | Map each item → test file, rate Strong/Medium/Weak (Stub = 0%). |
-| `/speckit-test-gaps` | 🔎 **QA** — on the PR (4th) | Find items with no test task or no test file; severity-classified. |
-| `/speckit-test-review` | 🔎 **QA** — on the PR (5th, pre-merge) | Full QA sign-off: mapping, stub scan, `/speckit-analyze`, scope-drift, traceability, constitution. |
+No standalone invocation in the happy path. Each command fires automatically as a hook on a
+core Spec Kit command.
 
-> Command files are named `speckit.test.*.md`; Spec Kit surfaces them with dots → hyphens,
-> so you invoke them as `/speckit-test-*`.
+| Command | Hook | Mode | What it does |
+|---------|------|------|--------------|
+| `speckit.test.planaudit` | `after_plan` | mandatory | Appends a `## Testing Strategy` section to `plan.md` mapping every P1 Acceptance Scenario / Functional Requirement to concrete unit/contract test cases (TDD, fail-first) with test framework, file paths, and mocking boundaries inferred from `plan.md`. Idempotent. |
+| `speckit.test.tasksaudit` | `after_tasks` (advisory) + `before_implement` (mandatory gate) | both | Verifies `tasks.md` materialized every case from the Testing Strategy as a real test task. Audit-only by default; the `before_implement` hook BLOCKS if any P1 item is missing its unit/contract task. With `planaudit` in place, this should normally find zero gaps. |
+| `speckit.test.qaprep` | `after_implement` | mandatory | Writes `FEATURE_DIR/test-plan.md` (traceability matrix, entry/exit criteria, risks), scaffolds the higher-layer tests (integration / E2E / regression / perf / a11y) as failing stubs labelled with spec item IDs, and seeds `FEATURE_DIR/checklists/test.md`. Idempotent; never overwrites existing tests. |
+| `speckit.test.qareview` | `after_analyze` | mandatory | Reads `/speckit-analyze`'s report plus workflow artefacts, computes requirement-level coverage (Strong/Medium/Weak/Stub/Missing), runs stub scan + traceability + constitution + checklist checks, emits a `Gate PASS or BLOCKED` verdict to chat **and** writes `FEATURE_DIR/review.md` (overwritten each run) so every invocation leaves a tracked record. Runnable anytime; the run after `/speckit-implement` is the formal pre-merge gate. |
+
+> Command files are named `speckit.test.*.md`; Spec Kit surfaces them with dots -> hyphens,
+> so they appear as `/speckit-test-*` in chat. You rarely invoke them manually -- the hooks
+> handle it.
 
 ---
 
-## The Quality Spec Kit workflow
-
-Spec Kit's **core** workflow proves a feature was *built*:
+## The unified Quality-Built-In workflow
 
 ```
-/speckit-specify → /speckit-plan → /speckit-tasks → /speckit-implement
-```
-
-The **Quality** workflow proves it was *built right* — the same core flow with quality steps
-woven in (core steps unchanged; `← Dev` / `← QA` marks who runs each addition; **★** is the one
-mandatory gate):
-
-```
-/speckit-constitution                         ← defines whether/which tests are mandatory
-/speckit-specify  →  /speckit-clarify         ← spec items: US{n}-AS{m}, FR-###, SC-###
+/speckit-constitution                  defines whether/which tests are mandatory
+/speckit-specify  ->  /speckit-clarify  spec items: US{n}-AS{m}, FR-###, SC-###
 /speckit-plan
+   └─ after_plan       *mandatory  ->  planaudit
+                                       writes ## Testing Strategy to plan.md
 /speckit-tasks
-   └─ /speckit-test-tasksaudit                 ← Dev  advisory audit (after_tasks)
-★  /speckit-test-tasksaudit                    ← Dev  MANDATORY gate (before_implement): audits &
-                                                      BLOCKS; dev runs `--write` to add missing tasks
-   /speckit-implement                          ← builds the feature + writes those tests first (TDD)
-   ────────────────────────────── open PR ──────────────────────────────
-   /speckit-test-plan                          ← QA   test-plan.md: impact analysis + QA test layers
-   /speckit-test-generate                      ← QA   scaffold the QA-layer tests
-   /speckit-test-coverage                      ← QA   requirement-level coverage
-   /speckit-test-gaps                          ← QA   untested items
-   /speckit-test-review                        ← QA   pre-merge sign-off  →  approve
+   └─ after_tasks       advisory   ->  tasksaudit
+                                       confirms test tasks match the Testing Strategy
+/speckit-implement
+   ├─ before_implement *mandatory  ->  tasksaudit (gate, audit-only)
+   │                                   BLOCKS if any P1 unit/contract task missing
+   └─ after_implement  *mandatory  ->  qaprep
+                                       writes test-plan.md + scaffolds + checklist
+/speckit-analyze
+   └─ after_analyze    *mandatory  ->  qareview
+                                       writes review.md with Gate PASS or BLOCKED
+                                       (anytime; the latest after /speckit-implement
+                                        is the formal pre-merge gate)
 ```
 
-In one line (commands only), split by role at the PR handoff:
+In one line, commands only -- a single linear workflow with no role split:
 
 ```
-👤 Developer (local; opens the PR after implementing)
-/speckit-specify → /speckit-clarify → /speckit-plan → /speckit-tasks → /speckit-test-tasksaudit ★ → /speckit-implement → 🔀 open PR
-
-🔎 QA engineer (inspects the PR)
-/speckit-test-plan → /speckit-test-generate → /speckit-test-coverage → /speckit-test-gaps → /speckit-test-review → ✅ approve
+/speckit-specify -> /speckit-clarify -> /speckit-plan -> /speckit-tasks -> /speckit-implement -> /speckit-analyze
+                                            |                  |                  |                   |
+                                            v                  v                  v                   v
+                                       planaudit          tasksaudit          qaprep             qareview
+                                       (Testing           (gate +             (test-plan.md      (review.md
+                                        Strategy           verify)             + scaffolds        + Gate
+                                        -> plan.md)                            + checklist)        verdict)
 ```
-
-`★` = mandatory pre-implement gate (`before_implement` hook). It **audits and blocks** when a P1
-scenario/FR has no unit/contract (TDD) test task — and prints the exact task lines to add. The
-developer closes the gate by running `/speckit-test-tasksaudit --write` (which adds those tasks to
-`tasks.md` for review) or by adding them by hand, then re-runs `/speckit-implement`. The hook
-itself never edits `tasks.md`. The PR is raised only after `/speckit-implement`, so QA always
-inspects a changeset whose unit tests were planned before any code was written.
 
 ---
 
-## Who owns what, and when (the gate model)
+## Artefacts produced
 
-The single hard gate lives **inside the Spec Kit flow**, before implementation — so it runs on
-the developer's machine without any external CI:
-
-```
-BEFORE /speckit-implement   ── Developer ── Spec Kit MANDATORY gate (before_implement hook)
-   /speckit-test-tasksaudit → audits that every P1 item has a UNIT/CONTRACT (TDD, fail-first)
-                              test task in tasks.md; BLOCKS if not (read-only).
-                              Dev runs `--write` to add the missing tasks, reviews, re-runs implement.
-
-AFTER  /speckit-implement   ── QA ── planned in FEATURE_DIR/test-plan.md
-   • Impact analysis + impact areas + regression scope
-   • Integration / E2E / regression / performance / accessibility / manual layers
-```
-
-- **Unit/contract tests are a non-negotiable development gate** — the `before_implement` hook
-  is mandatory and **read-only**: it blocks `/speckit-implement` when a P1 unit/contract test
-  task is missing and prints the lines to add. The developer closes it with
-  `/speckit-test-tasksaudit --write` (which adds the tasks to `tasks.md` for review) or by hand.
-  Use `--advisory` only as an explicit, recorded opt-out; the constitution can *escalate* the gate
-  to more layers but cannot silently remove it.
-- **The heavier layers and impact analysis are QA's**, prepared after implementation and
-  captured in `test-plan.md`. Regression scope is derived from the Impact Analysis section.
-
-> Note on enforceability: Spec Kit hooks are agent-driven, so they bind when the developer
-> works *through* `/speckit-implement`. To make the gate unbypassable regardless of how code
-> is written, pair it with `test-plan.md --also-checklist` (which `/speckit-implement` blocks
-> on) and/or a required CI check on the PR.
+| Path | Produced by | When | Lifecycle |
+|------|-------------|------|-----------|
+| `FEATURE_DIR/plan.md` (## Testing Strategy section) | `planaudit` | after `/speckit-plan` | Refreshed in place each run |
+| `FEATURE_DIR/tasks.md` (test tasks) | `/speckit-tasks` (materializes Testing Strategy); `tasksaudit --write` may add missing ones manually | after `/speckit-tasks` | Edited additively |
+| `FEATURE_DIR/test-plan.md` | `qaprep` | after `/speckit-implement` | Refreshed in place; manual edits preserved between markers |
+| `tests/integration/`, `tests/e2e/`, `tests/regression/`, `tests/perf/`, `tests/a11y/` stubs | `qaprep` | after `/speckit-implement` | Created if absent; **never overwrites** existing files |
+| `FEATURE_DIR/checklists/test.md` | `qaprep` | after `/speckit-implement` | Refreshed; ticked rows preserved |
+| `FEATURE_DIR/review.md` | `qareview` | after every `/speckit-analyze` | **Overwritten** each run; `git log review.md` shows verdict evolution |
 
 ---
 
-## Worked example: the gate in action
+## The pre-merge gate
 
-A feature `specs/001-connect-hotel-filter/` after `/speckit-tasks`.
+The formal pre-merge gate is whatever `qareview` writes to `FEATURE_DIR/review.md` on the run
+that follows `/speckit-implement`. The file has a metadata header (feature path, timestamp,
+verdict, mode) followed by the Blocker / Major / Minor tables and a single line:
+
+```
+SPECTEST QAREVIEW: 12 items, 7 Strong, 3 Blockers, 2 Majors, 1 Minor -- FAIL
+```
+
+CI can grep that line; the PR description can link to `review.md`. Rerun `/speckit-analyze`
+anytime to refresh the verdict.
+
+---
+
+## Worked example
+
+A feature `specs/001-connect-hotel-filter/`.
 
 **`spec.md`** (stock Spec Kit excerpt):
 
@@ -158,116 +144,71 @@ A feature `specs/001-connect-hotel-filter/` after `/speckit-tasks`.
 - **FR-002**: System MUST update the result count to reflect the filtered set.
 
 ## Success Criteria
-- **SC-001**: Filtered results render in < 500ms for 1000 hotels.
+- **SC-001**: Filtered results render in under 500ms for 1000 hotels.
 ```
 
-Testable P1 items: `US1-AS1`, `US1-AS2`, `FR-001`, `FR-002`, `SC-001`.
+### After `/speckit-plan` (planaudit auto-runs)
 
-### Step 1 — `tasks.md` straight from `/speckit-tasks` (unit tests incomplete)
+`plan.md` gains a `## Testing Strategy` section:
 
 ```markdown
-## Phase 3: User Story 1 - Filter hotels by star rating (Priority: P1) 🎯 MVP
+## Testing Strategy
 
-### Tests for User Story 1
-- [ ] T010 [P] [US1] Unit test for star-rating selection in tests/unit/star-filter.test.ts
-- [ ] T011 [US1] Add tests
+> Generated at plan-time by speckit.test.planaudit (after_plan hook).
 
-### Implementation for User Story 1
-- [ ] T012 [P] [US1] Create StarRatingFilter in src/components/StarRatingFilter.tsx
-- [ ] T013 [US1] Add pagination-aware filter state in src/state/filter.ts
-- [ ] T014 [US1] Wire result-count badge in src/components/ResultCount.tsx
+**Policy:** TDD mandatory (unit + contract, fail-first).
+**Test framework:** Vitest
+**Test root:** tests/
+
+### Unit / Contract Test Cases -- User Story 1 (P1)
+
+| Item | Layer | Case | Test file |
+|------|-------|------|-----------|
+| US1-AS1 | unit | star-rating selection filters list and updates count | tests/unit/star-filter.test.ts |
+| US1-AS2 | unit | adding 4-star to 3-star selection shows both | tests/unit/star-filter-multi.test.ts |
+| FR-001 | unit | filter persists across pagination | tests/unit/filter-persistence.test.ts |
+| FR-002 | unit | result-count reflects filtered set | tests/unit/result-count.test.ts |
 ```
 
-`FR-001` and `FR-002` have no unit test task, and `T011` is a stub.
+### After `/speckit-tasks` (tasksaudit advisory verifies)
 
-### Step 2 — Run the gate (default audit) — it BLOCKS and shows what to add
+`tasks.md` has materialized those cases as test tasks. The advisory `after_tasks` hook
+reports `PASS` (zero gaps) because the Testing Strategy was already locked in plan.md.
 
-```text
-/speckit-test-tasksaudit          # this is what the before_implement hook runs (audit-only)
-```
+### Before `/speckit-implement` (tasksaudit gate)
+
+Mandatory gate runs audit-only. Either `PASS` (proceed) or `BLOCKED` with the exact task
+lines to add.
+
+### After `/speckit-implement` (qaprep auto-runs)
+
+Implementation writes T010/T015/T016 first (they fail), then implements until green.
+`qaprep` writes `test-plan.md`, scaffolds `tests/integration/filter-persistence.integration.test.ts`
+and `tests/perf/search-latency.perf.test.ts` (both failing stubs for SC-001), and seeds
+`checklists/test.md`.
+
+### `/speckit-analyze` (qareview auto-runs)
+
+Reads the analyze report plus all artefacts, writes the verdict to `FEATURE_DIR/review.md`:
 
 ```markdown
-## Pre-Implementation Gate — BLOCKED ❌
+# Consistency + Quality Verdict -- 001-connect-hotel-filter
 
-Feature: specs/001-connect-hotel-filter/
-Policy: Unit Gate ON (default)
-P1 gated items: 4 (2 scenarios, 2 FR) | Unit/contract present: 2 | Gaps: 2 | Stubs: 1
+| Field        | Value                                         |
+|--------------|-----------------------------------------------|
+| Run at       | 2026-06-08T14:32:11Z                          |
+| Verdict      | **Gate: BLOCKED**                             |
 
-### ❌ Missing unit/contract test task (add these to close the gate)
-| Item | Task to add |
-|------|-------------|
-| FR-001 | `- [ ] T015 [P] [US1] Unit test for filter persistence across pagination (FR-001) in tests/unit/filter-persistence.test.ts` |
-| FR-002 | `- [ ] T016 [P] [US1] Unit test for result-count calculation (FR-002) in tests/unit/result-count.test.ts` |
+### Blockers
+| ID | Where  | Issue                                                            |
+|----|--------|------------------------------------------------------------------|
+| B1 | SC-001 | Perf test is still the qaprep failing stub                       |
 
-### ⚠️ Should fix
-| Task | Issue |
-|------|-------|
-| T011 [US1] Add tests | Stub-by-description — names no behaviour/path |
-
-### ℹ️ Advisory — QA layers (defer to test-plan.md, after implementation)
-- SC-001 has no perf test — QA owns performance, prepared after implementation.
-
-Gate: BLOCKED — run `/speckit-test-tasksaudit --write` to add these, or add them by hand.
-```
-```text
-SPECTEST AUDIT: 4 gated items, 2 with unit/contract tests, 2 gaps (FR-001, FR-002), 1 stub — FAIL
+SPECTEST QAREVIEW: 4 items, 3 Strong, 1 Blocker -- FAIL
 ```
 
-### Step 3 — Developer runs `--write`; reviews the resulting `tasks.md`
-
-```text
-/speckit-test-tasksaudit --write
-```
-
-```markdown
-### Tests for User Story 1
-> NOTE: Write these tests FIRST, ensure they FAIL before implementation.
-- [ ] T010 [P] [US1] Unit test for star-rating selection in tests/unit/star-filter.test.ts
-- [ ] T011 [US1] Add tests                                   ← flagged: remove (stub)
-- [ ] T015 [P] [US1] Unit test for filter persistence across pagination (FR-001) in tests/unit/filter-persistence.test.ts
-- [ ] T016 [P] [US1] Unit test for result-count calculation (FR-002) in tests/unit/result-count.test.ts
-```
-
-The developer reviews the additions, deletes the flagged `T011` stub, then re-runs the gate
-(now `PASS`) and `/speckit-implement` — which writes T010/T015/T016 first (they fail), then
-implements until green. The developer must **not** re-run `/speckit-tasks` (it would discard
-T015/T016). SC-001's perf test stays for QA's `test-plan.md`, post-implementation.
-
-> Note: `SC-001` (a performance Success Criterion) passes the gate untouched because perf is a
-> QA-owned layer prepared after implementation — the gate only acts on missing **unit/contract**
-> tasks. SC-001 still appears in QA's `test-plan.md` as a post-implementation perf test.
-
----
-
-## How it fits the SDD pipeline
-
-```
-/speckit-constitution     → constitution.md   (defines whether tests are mandatory)
-/speckit-specify          → spec.md           (User Stories, Acceptance Scenarios, FR-###, SC-###)
-/speckit-clarify          → spec.md updated
-/speckit-plan             → plan.md
-/speckit-tasks            → tasks.md
-                            ↓
-                   [Dev: /speckit-test-tasksaudit]  ← after_tasks hook (advisory)
-/speckit-checklist        → checklists/*.md   (requirements-quality gate)
-/speckit-analyze          → cross-artefact consistency report
-                            ↓
-                   [Dev: /speckit-test-tasksaudit]  ← before_implement hook (MANDATORY gate)
-                   Audits & BLOCKS if a P1 unit/contract (TDD) test task is missing
-                   (dev runs `--write` to add them to tasks.md, then reviews)
-                            ↓
-/speckit-implement        → source + tests (TDD: unit tests written first, must FAIL)
-                            ↓
-                   ══ Developer opens the PR ══
-                            ↓
-                   [QA: /speckit-test-plan]         ← test-plan.md: impact analysis + QA layers
-                   [QA: /speckit-test-generate]     ← scaffold the QA-layer tests
-                   [QA: /speckit-test-coverage]     ← requirement-level coverage
-                   [QA: /speckit-test-gaps]         ← untested items
-                   [QA: /speckit-test-review]       ← pre-merge sign-off
-                            ↓
-PR approved + merged
-```
+Implement the stubbed perf test, rerun `/speckit-analyze`, `review.md` refreshes to
+`Gate: PASS`.
 
 ---
 
@@ -275,16 +216,16 @@ PR approved + merged
 
 ```bash
 # From a Spec Kit project root, after `specify init`
-specify extension add --from https://github.com/NDViet/speckit-test-extension/archive/refs/heads/master.zip EXTENSION
+specify extension add --from https://github.com/NDViet/speckit-test-extension/archive/refs/heads/master.zip
 ```
 
 Or from a local folder (offline / development):
 
 ```bash
-specify extension add --from ./speckit-test-extension
+specify extension add --dev /path/to/speckit-test-extension
 ```
 
-Requires Spec Kit ≥ 0.8.0.
+Requires Spec Kit >= 0.8.0.
 
 ---
 
@@ -292,55 +233,30 @@ Requires Spec Kit ≥ 0.8.0.
 
 | Convention | Detail |
 |------------|--------|
-| **Feature directory** | Resolved via `.specify/scripts/powershell/check-prerequisites.ps1 -Json` (the `FEATURE_DIR`), not a hard-coded `specs/NNN-*` glob |
-| **Testable items** | `US{n}-AS{m}` (Acceptance Scenarios), `FR-###`, buildable `SC-###` — drawn from stock `spec.md` |
-| **Test tasks** | Identified by a `### Tests for User Story N` subsection **or** a test path/description — **not** by `[P]` |
-| **`[P]` marker** | Means *parallelizable* (Spec Kit semantics), reported but never used to identify tests |
-| **`[US#]` label** | Maps a task to its user story; used to attribute test tasks to scenarios |
-| **Tests mandatory?** | Unit/contract (TDD) tests are mandatory by default before `/speckit-implement` (the gate). The `constitution.md` can escalate which layers block; `--advisory` is an explicit opt-out |
-| **Automation kind** | `AUTO`/`MANUAL`/`BOTH` is *inferred* from the test path/wording for reports — never required on tasks |
-| **Test plan** | `FEATURE_DIR/test-plan.md`; optional `FEATURE_DIR/checklists/test.md` to gate `/speckit-implement` |
-| **Stub detection** | `.skip`/`.todo`/`xit`/`xdescribe`, `@pytest.mark.skip`, `throw new Error('TODO')`, `raise NotImplementedError`, `expect(true).toBe(true)`, bare `toBeTruthy()`/`assert True`, empty bodies |
-| **Confidence** | Strong (label cites the item ID), Medium (keyword match), Weak (file maps to story only), Stub (0%) |
-| **Out of scope** | Read from `spec.md` → `## Assumptions` (Spec Kit has no `## Out of scope` heading) |
+| **Feature directory** | Resolved via `.specify/scripts/powershell/check-prerequisites.ps1 -Json` (`FEATURE_DIR`) |
+| **Testable items** | `US{n}-AS{m}`, `FR-###`, buildable `SC-###` -- drawn from stock `spec.md` |
+| **Test tasks** | Identified by a `### Tests for User Story N` subsection **or** a test path -- not by `[P]` |
+| **`[P]` marker** | Means *parallelizable* (Spec Kit semantics); never used to identify tests |
+| **`[US#]` label** | Maps a task to its user story |
+| **Tests mandatory?** | Unit/contract (TDD) tests are mandatory by default. `constitution.md` can escalate which layers block; `--advisory` is an explicit opt-out |
+| **Verdict file** | `FEATURE_DIR/review.md` -- overwritten on each `/speckit-analyze` run |
+| **Test plan** | `FEATURE_DIR/test-plan.md` (written by `qaprep` after `/speckit-implement`) |
+| **Checklist** | `FEATURE_DIR/checklists/test.md` (seeded by `qaprep`) |
+| **Stub detection** | `.skip` / `.todo` / `xit` / `xdescribe`, `@pytest.mark.skip`, `throw new Error('TODO')`, `raise NotImplementedError`, `expect(true).toBe(true)`, bare `toBeTruthy()` / `assert True`, empty bodies, unmodified qaprep stubs |
+| **Confidence rating** | Strong (test cites item ID), Medium (keyword match), Weak (file maps to story only), Stub (0%) |
+| **Out of scope** | Read from `spec.md` -> `## Assumptions` (Spec Kit has no `## Out of scope` heading) |
 
 ---
 
 ## Hooks
 
-Registered in `extension.yml`, dispatched via `.specify/extensions.yml`. **Only the
-developer-lane gate is hooked** — the QA-lane commands are run by hand against the PR, not as
-lifecycle hooks (QA never runs `/speckit-implement`):
+Registered in `extension.yml`, dispatched via `.specify/extensions.yml`. **All five hooks
+are workflow-internal** -- there is no separate role lane:
 
 | Event | Command | Mode | Behaviour |
 |-------|---------|------|-----------|
-| `after_tasks` | `/speckit-test-tasksaudit` | optional | Advisory audit right after tasks are generated — surface missing unit tests early |
-| `before_implement` | `/speckit-test-tasksaudit` | **mandatory** | Unit-test gate (audit-only) — **blocks** if a P1 unit/contract (TDD) test task is missing; the dev runs `--write` to add them to `tasks.md` |
-
-The QA-lane commands (`test-plan`, `test-generate`, `test-coverage`, `test-gaps`,
-`test-review`) are invoked manually by the QA engineer on the opened PR.
-
----
-
-## Differences from upstream
-
-Based on [spec-kit-spectest v1.0.0](https://github.com/Quratulain-bilal/spec-kit-spectest).
-
-| Area | Upstream | This extension |
-|------|----------|----------------|
-| Requirement IDs | `REQ-001` | Stock Spec Kit items: `US{n}-AS{m}`, `FR-###`, `SC-###` |
-| Spec location | `.specify/spec.md` | `FEATURE_DIR/spec.md` via `check-prerequisites.ps1` |
-| Test plan output | `.specify/test-plan.md` | `FEATURE_DIR/test-plan.md` (+ optional `checklists/test.md` gate) |
-| `[P]` meaning | treated as test marker | corrected to *parallelizable*; tests found by subsection/path |
-| Tests required? | always | unit/contract (TDD) mandatory before implement; QA layers post-implement; constitution can escalate |
-| Automation tags | required on tasks | inferred for reports; never required (matches stock tasks.md) |
-| Constitution | none | drives the test-requirement mode and coverage thresholds |
-| Stub detection | not present | all review commands flag stubs with `file:line` |
-| Pre-merge gate | none | `/speckit-test-review` full sign-off, folds in `/speckit-analyze` |
-| Tasks audit | none | `/speckit-test-tasksaudit` — audits the unit-test plan and blocks (read-only); `--write` adds the missing tasks. Wired to `before_implement` |
-
----
-
-## License
-
-MIT �
+| `after_plan` | `planaudit` | **mandatory** | Appends Testing Strategy section to `plan.md` |
+| `after_tasks` | `tasksaudit` | optional | Advisory verify; should find zero gaps when planaudit ran |
+| `before_implement` | `tasksaudit` | **mandatory** | Gate (audit-only); BLOCKS if any P1 unit/contract task missing |
+| `after_implement` | `qaprep` | **mandatory** | Writes `test-plan.md`, scaffolds higher-layer tests, seeds checklist |
+| `after_analyze` | `qareview` | **mandatory** | Writes `review.md` wi

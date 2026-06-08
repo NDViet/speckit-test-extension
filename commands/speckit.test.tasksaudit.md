@@ -5,10 +5,12 @@ argument-hint: "[--write] [--advisory] [--require integration,e2e] [--story US1]
 
 # Test Task Audit — Pre-Implementation Gate (Unit / TDD)
 
-**Developer lane — the developer's only extension step**, run locally between `/speckit-tasks`
-and `/speckit-implement` (the ★ in `… → /speckit-tasks → /speckit-test-tasksaudit ★ →
-/speckit-implement → open PR`). It is the Spec Kit-managed gate wired to the mandatory
-`before_implement` hook. The QA-lane commands run later, on the PR.
+**Runs automatically as the advisory `after_tasks` hook and the mandatory `before_implement`
+hook** of the core Spec Kit workflow. The unit/contract test plan is decided earlier (by
+`planaudit` during `/speckit-plan`); this command verifies that `/speckit-tasks` materialized
+every case as a real test task before `/speckit-implement` runs. Higher-layer test artefacts
+(integration / E2E / perf / a11y) are produced by `qaprep` after `/speckit-implement`; their
+absence is advisory here.
 
 **Default is audit-only (read-only).** Following TDD, every P1 testable item must have a
 **unit or contract test task in `tasks.md` (written first, to fail)** before implementation
@@ -26,7 +28,7 @@ silently editing `tasks.md` with generated task lines the developer has not seen
 deliberate, reviewed action — never an unattended side effect of the hook.
 
 The heavier test layers — integration, E2E, regression, performance, accessibility, manual —
-are **QA's responsibility, prepared after implementation** and tracked in
+are **prepared by `qaprep` after `/speckit-implement`** and tracked in
 `FEATURE_DIR/test-plan.md`. This command never writes those layers; their absence here is
 **advisory** (unless the constitution escalates them, or you pass `--require`).
 
@@ -81,13 +83,13 @@ State the active policy and its source at the top of the report.
 |-------------------|-----------|-------|
 | `### User Story N (Priority: Px)` → `**Acceptance Scenarios**` | `US{N}-AS{M}` | **Gated.** Priority inherited from the story (P1/P2/P3). |
 | `### Functional Requirements` | `FR-###` | **Gated.** Each `**FR-###**` line. |
-| `## Success Criteria` (buildable only) | `SC-###` | **Not gated by default** — perf/security/availability criteria are higher-layer and QA-owned (post-implementation, in test-plan.md). Reported as advisory; exclude business KPIs entirely. |
+| `## Success Criteria` (buildable only) | `SC-###` | **Not gated by default** — perf/security/availability criteria are higher-layer (post-implementation, in test-plan.md). Reported as advisory; exclude business KPIs entirely. |
 | `### Edge Cases` | — | Coverage candidates; not gated. |
 
 The unit gate binds on **P1 Acceptance Scenarios and Functional Requirements** — the
 behaviour a developer can cover with a fail-first unit/contract test. **Success Criteria
-(`SC-###`) are advisory at this gate**: perf/security/availability are QA-owned layers
-prepared after implementation, so they belong in `test-plan.md`, not the pre-implement gate
+(`SC-###`) are advisory at this gate**: perf/security/availability are higher-layer concerns
+prepared after implementation by `qaprep`, so they belong in `test-plan.md`, not the pre-implement gate
 (unless the constitution or `--require` escalates them). Lower-priority items are reported
 but not blocking unless the constitution says otherwise.
 
@@ -122,7 +124,7 @@ For each **P1 Acceptance Scenario and Functional Requirement** (not SC — see S
 | A unit **or** contract test task is planned for it (TDD) | ✅ / ❌ **Blocker** |
 | That task names the specific behaviour (not "add tests") | ✅ / ⚠️ Major |
 | It is not a stub-by-description ("Add tests", no path) | ✅ / ❌ |
-| Higher layers (integration/e2e/perf/a11y) planned | ℹ️ Advisory — note for QA's test-plan.md |
+| Higher layers (integration/e2e/perf/a11y) planned | ℹ️ Advisory — handled later by `qaprep` in test-plan.md |
 | Layers in the escalated blocking set are planned | ✅ / ❌ Blocker |
 
 For **`SC-###`** items: report whether a perf/security test is planned, but mark it
@@ -185,7 +187,7 @@ P1 gated items: 4 (2 scenarios, 2 FR) | Unit/contract present: 2 | Gaps: 2 | Stu
 | T011 [US1] Add tests | Stub-by-description — names no behaviour/path |
 
 ### ℹ️ Advisory — QA layers (defer to test-plan.md, after implementation)
-- SC-001 has no perf test — QA owns performance, prepared after implementation.
+- SC-001 has no perf test — performance is prepared after implementation by `qaprep`.
 
 Gate: BLOCKED — /speckit-implement must not proceed until these unit/contract tasks exist.
 Run `/speckit-test-tasksaudit --write` to add them to tasks.md (then review), or add them by hand.
@@ -248,9 +250,9 @@ SPECTEST AUDIT: 4 gated items, 4 with unit/contract tests, 0 gaps, 0 stubs — P
 - **The gate is unit/contract (TDD), and it is mandatory by default** — a P1 Acceptance
   Scenario or Functional Requirement with no unit or contract test task is a **Blocker**; close
   it with `--write` or by hand (or, under `--advisory`, record the waiver).
-- **Success Criteria are not gated** — `SC-###` (perf/security/availability) are QA-owned
-  higher layers; report them as advisory, never as a gate Blocker, unless escalated.
-- **Higher layers are QA's, post-implementation** — integration/E2E/regression/perf/a11y are
+- **Success Criteria are not gated** — `SC-###` (perf/security/availability) are higher
+  layers; report them as advisory, never as a gate Blocker, unless escalated.
+- **Higher layers are post-implementation** — integration/E2E/regression/perf/a11y are
   advisory at this gate; their home is `FEATURE_DIR/test-plan.md`, prepared after implement.
   Do not block on them unless the constitution or `--require` escalates them.
 - **`[P]` is parallelism, not tests** — classify test tasks by the Tests subsection / test path, never by `[P]`.
