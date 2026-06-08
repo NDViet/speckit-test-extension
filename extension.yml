@@ -1,7 +1,7 @@
 schema_version: "1.0"
 
 extension:
-  id: spectest-sdet
+  id: test
   name: "SpecTest — SDET Edition"
   version: "1.1.0"
   description: >
@@ -61,18 +61,17 @@ provides:
     - name: speckit.test.review
       file: commands/speckit.test.review.md
       description: >
-        QA pre-merge sign-off. Item→test-task mapping, stub scan, /speckit-analyze consistency,
+        QA pre-merge sign-off. Item->test-task mapping, stub scan, /speckit-analyze consistency,
         scope-drift, traceability chain, test-plan/checklist presence, and constitution compliance.
         Outputs a Blocker/Major/Minor table and an explicit gate verdict. Read-only.
 
 # Hooks register SpecTest commands on core Spec Kit lifecycle events.
-# Dispatched via .specify/extensions.yml; command names are invoked with dots → hyphens
+# Command names use dots; Spec Kit surfaces them with dots → hyphens in agent chat
 # (e.g. speckit.test.tasksaudit → /speckit-test-tasksaudit).
 #
-# Only the DEVELOPER-lane gate (tasksaudit) is hooked into the Spec Kit lifecycle, because
-# only the developer runs /speckit-tasks and /speckit-implement locally. The QA-lane commands
-# (test-plan, test-generate, test-coverage, test-gaps, test-review) are NOT hooks — the QA
-# engineer runs them by hand against the opened PR, after /speckit-implement.
+# Only the DEVELOPER-lane gate (tasksaudit) is hooked into the Spec Kit lifecycle.
+# The QA-lane commands (test-plan, generate, coverage, gaps, review) are NOT hooks —
+# the QA engineer runs them manually against the opened PR, after /speckit-implement.
 hooks:
   after_tasks:
     command: speckit.test.tasksaudit

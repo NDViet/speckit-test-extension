@@ -275,6 +275,12 @@ PR approved + merged
 
 ```bash
 # From a Spec Kit project root, after `specify init`
+specify extension add --from https://github.com/NDViet/speckit-test-extension/archive/refs/heads/master.zip EXTENSION
+```
+
+Or from a local folder (offline / development):
+
+```bash
 specify extension add --from ./speckit-test-extension
 ```
 
@@ -337,4 +343,4 @@ Based on [spec-kit-spectest v1.0.0](https://github.com/Quratulain-bilal/spec-kit
 
 ## License
 
-MIT — same as upstream.
+MIT — same as
