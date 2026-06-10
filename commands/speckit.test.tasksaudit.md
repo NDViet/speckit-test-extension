@@ -31,9 +31,18 @@ Flags: `--write` (apply fix), `--advisory` (warning instead of block; never writ
 ### 1. Gate policy
 - **Default:** Unit Gate ON — every P1 AS/FR needs a unit or contract task.
 - **Constitution / `--require`** can add layers to the blocking set.
-- **`--advisory`** downgrades unit gate to warning.
+- **Change Profile escalations** (read from plan.md § Testing Strategy header; cumulative):
+  - `bugfix` → require a reproducing-bug test task per corrective FR (path must reference defect ID or item ID).
+  - `refactor` → require ≥1 characterization test task per touched module named in plan.md.
+  - `concurrency` → require concurrency/stress test task per documented invariant.
+  - `performance` → require perf test task per buildable `SC-###` (SC moves from advisory to gated).
+  - `security` → require authz-negative test task per documented boundary.
+  - `api` → require contract test task per `contracts/` entry.
+  - `data-migration` → require migration up + down test task per migration file.
+  - `ui` → unchanged at this gate (heavier layers handled by qaprep/qareview).
+- **`--advisory`** downgrades the unit gate (and profile escalations) to warnings.
 
-State the active policy + source at top of report.
+State the active policy + source + active Change Profile tags at top of report.
 
 ### 2. Testable-item inventory (from spec.md)
 
@@ -117,9 +126,9 @@ After `--write`, re-check Step 4 and emit `PASS` listing additions. Remind: do *
 ### 6. CI one-liner
 
 ```
-SPECTEST AUDIT: 4 gated, 2 covered, 2 gaps (FR-001, FR-002), 1 stub — FAIL
-SPECTEST AUDIT: 4 gated, 2 present + 2 added = 4, 1 stub flagged — PASS (written)
-SPECTEST AUDIT: 4 gated, 4 covered, 0 gaps, 0 stubs — PASS
+SPECTEST AUDIT: profile=[bugfix], 4 gated + 1 escalated, 2 covered, 3 gaps, 1 stub — FAIL
+SPECTEST AUDIT: profile=[api,security], 6 gated, 6 covered, 0 gaps — PASS
+SPECTEST AUDIT: profile=[refactor], 0 new FR, 3 characterization tasks present — PASS
 ```
 
 Under `--advisory`: render tables but label unit gaps `⚠️ Advisory (TDD waived)` and end `Gate: PASS (advisory)`.

@@ -21,7 +21,7 @@ Flags: `--strict` (Majors → Blockers), `--story US1`, `--no-write` (chat-only;
 ## Prerequisites
 
 1. `.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks` → parse `FEATURE_DIR`.
-2. Read `spec.md`, `plan.md` (incl. `## Testing Strategy`), `tasks.md`, `test-plan.md`, `checklists/test.md`, `.specify/memory/constitution.md`. Scan `tests/`.
+2. Read `spec.md`, `plan.md` (incl. `## Testing Strategy` — **read `Change Profile:` tags from the header**), `tasks.md`, `test-plan.md`, `checklists/test.md`, `.specify/memory/constitution.md`. Scan `tests/`.
 3. **Lift `/speckit-analyze`'s in-conversation report** when available: finding table (A1, D1…), Coverage Summary, Unmapped Tasks, Constitution Alignment.
 
 ## Checks
@@ -54,9 +54,27 @@ Body matches "stub by description" task → **Major**.
 Verify end-to-end: `spec item → plan.md Testing Strategy row → tasks.md test task → test file with ID in header → test-plan.md matrix row`. Broken link → Major.
 
 ### 5. Artefact presence
-- `test-plan.md` exists + every gated item in matrix → else Blocker.
-- `checklists/test.md` exists + gated rows ticked → else Major (Blocker under `--strict`).
+- `test-plan.md` exists + every gated item in matrix + every P1 item has ≥1 TC in §3 Catalogue → else Blocker.
+- `checklists/test.md` exists + gated rows ticked **with non-empty Evidence** → ticked-without-evidence is Major (Blocker under `--strict`).
 - Constitution-required test-plan sections present → else Major.
+
+### 6. Execution evidence (after_implement only)
+- Every P1 TC (auto + manual) has ≥1 entry in `test-plan.md` §8 Test Execution Log naming a build/commit ≥ current head → else Blocker.
+- Any P1 TC last-run = FAIL with no linked defect ID → Blocker.
+- Flaky TCs (mixed pass/fail in last 3 runs) → Major.
+- On `after_analyze` (no real runs yet) skip Check 6; flag Catalogue completeness only.
+
+### 7. Change-Profile checks (per active tag)
+- `bugfix` — reproducing test must exist + have a *failing* run pre-fix and a *passing* run post-fix in §8; else Blocker.
+- `refactor` — characterization suite is green; **no new functional cases** added vs prior run unless plan declares a new public-surface entry; new functional cases without surface change = Major (scope drift).
+- `concurrency` — stress test ran ≥ N (constitution-declared, default 100) iterations with zero deadlock/data-race report; else Blocker.
+- `performance` — perf run within budget vs baseline file; over-budget regression = Blocker (perf SC rated Strong only when within budget).
+- `security` — SAST + dep-scan attached to §8 with zero new High/Critical; authz-negative tests green; else Blocker.
+- `ui` — visual diff reviewed (Evidence: diff URL); cross-browser matrix green; outstanding diff without sign-off = Major.
+- `api` — schema-compat report: breaking change without version bump = Blocker; non-breaking but undocumented = Major.
+- `data-migration` — up/down/rollback rehearsed on staging with §8 evidence; partial backfill = Blocker.
+
+Missing `Change Profile` header in plan.md → Major (the feature predates planaudit's profile detection or planaudit was skipped).
 
 ## Output — `review.md` (and chat)
 
@@ -75,7 +93,10 @@ Same body in both; file gets a metadata header prepended.
 | Verdict | **Gate: BLOCKED ❌** or **Gate: PASS ✅** |
 | Mode | normal / --strict / --no-write |
 
+Change Profile: [api, security]
 Gated items: 12 (8 P1, 4 SC) | Strong: 7 | Medium: 2 | Weak: 1 | Stub: 1 | Missing: 1
+TC Catalogue: 18 (14 auto, 4 manual) | Last run: 14 pass, 2 fail, 2 not-run | Defects open: 1 (BUG-417)
+Profile checks: schema-compat=pass, authz-negative=pass, SAST=0 high, dep-scan=0 high
 
 ### ❌ Blockers
 | ID | Where | Issue | Action |
@@ -128,4 +149,6 @@ Under `--strict`, Majors count as Blockers in the verdict line.
 - **Traceability needs the item ID *in the test*** — without it, max rating is Weak.
 - **Constitution MUSTs always escalate to Blocker** — cannot be silenced.
 - **Missing test-plan.md / checklist / scaffolds → first Blocker is "re-run after-tasks (qaprep)".**
+- **Checklist ticks need Evidence** — bare ticks don't count as sign-off.
+- **`after_implement` requires Execution Log entries** — verdict cannot be PASS without recorded runs for every P1 TC.
 - **Explicit verdict** — always `Gate: PASS|BLOCKED` + `SPECTEST QAREVIEW:` one-liner.

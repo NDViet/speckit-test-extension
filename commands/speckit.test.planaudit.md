@@ -34,6 +34,24 @@ Flags: `--dry-run` (preview), `--story US1` (scope to one story), `--advisory` (
 
 State the active policy at the top of the rendered section.
 
+### 1b. Change Profile (detect once; downstream commands read it from here)
+
+Scan spec.md headings/text and plan.md Technical Context for these literal signals; multi-tag allowed; default `feature` if none match. Record in the rendered section header as `**Change Profile:** [tag, …]`. Conflicting tags are logged, not silenced.
+
+| Tag | Signals (any) | Adds to test recipe |
+|---|---|---|
+| `feature` | default | standard unit/contract per P1 AS/FR |
+| `ui` | UI screens, UX flows, "user-facing UI", design files | + a11y + visual + cross-browser plan rows |
+| `api` | endpoints, `contracts/`, SDK, schema | + contract tests, schema-compat, error envelopes, authz |
+| `bugfix` | linked defect ID, FR phrased "MUST no longer …", "regression" | + 1 reproducing test (fails without fix) + 1 root-cause guard test |
+| `refactor` | plan says "refactor/no behaviour change", no new FR | **characterization** tests on touched surface; **forbid** new functional cases unless surface changes |
+| `concurrency` | race/lock/deadlock/async/parallel/atomic in spec or plan | + concurrent/N-caller stress, invariant/property tests, deterministic-seed repeat-N |
+| `performance` | buildable `SC-###` with latency/throughput/resource budget | + baseline-vs-new perf test with a regression budget (% over baseline = FAIL) |
+| `security` | auth/PII/permissions/crypto/threat in spec or plan | + authz negative tests, secrets handling, SAST + dep-scan rows (planned in test-plan.md) |
+| `data-migration` | schema change, backfill, ETL, migration file in plan | + migration up/down, idempotency, data-integrity sampling, rollback drill |
+
+State conflicts plainly: `Conflict: refactor + new FR-007 — treat as feature, log warning`.
+
 ### 2. Testable items (from spec.md)
 
 | Source | ID | Gated here |
@@ -49,6 +67,18 @@ Infer from plan.md (language → conventional framework; declared paths). If und
 ### 4. Generate cases
 For each in-scope item, emit ≥1 happy-path case and ≥1 error/edge case (when an edge applies). Each case has: Item ID, Layer (`unit` default; `contract` for API/schema), Case name, Arrange/Act/Assert (map G/W/T directly when AS), concrete test path, mocking boundary.
 
+**Change-Profile additions at the unit/contract layer** (deferring heavier layers to qaprep):
+
+- `bugfix` → for each corrective FR, also emit a **reproducing-bug** case (must fail before fix) and a **root-cause guard** case.
+- `refactor` → for each touched module, emit **characterization** cases that lock current behaviour from existing call sites; do **not** invent new behavioural cases.
+- `concurrency` → for each invariant in spec/plan, emit a **property** or **repeat-N deterministic-seed** case at unit level; full stress belongs to qaprep.
+- `api` → for each contract, emit a **schema-compat** case (current schema = green, breaking change = red) alongside the contract test.
+- `performance` → unit-level **micro-benchmark guard** if plan declares one; otherwise defer to qaprep.
+- `security` → for each authz boundary in plan, emit a **negative-path** unit/contract case (forbidden role rejected).
+- `data-migration` → emit a **migration up + down** unit/contract case per migration file.
+
+Each added case still names a real `US{N}-AS{M}` or `FR-###`; never invented.
+
 ### 5. Render `## Testing Strategy` block
 
 Append at end of plan.md (or replace existing block between `## Testing Strategy` and the next `## ` heading — never duplicate).
@@ -60,6 +90,7 @@ Append at end of plan.md (or replace existing block between `## Testing Strategy
 > `/speckit-tasks` materializes each row as a test task; `tasksaudit` verifies the mapping.
 
 **Policy:** TDD mandatory (unit + contract, fail-first).
+**Change Profile:** [feature | ui | api | bugfix | refactor | concurrency | performance | security | data-migration]
 **Test framework:** <inferred> <NEEDS CONFIRMATION if undeclared>
 **Test root:** <inferred>
 
@@ -83,7 +114,7 @@ Every P1 AS/FR above has ≥1 unit/contract case. SC items deferred.
 ### 6. Report
 
 ```
-SPECTEST PLAN: 6 P1 items, 9 unit + 1 contract cases written to plan.md — OK
+SPECTEST PLAN: profile=[api,security], 6 P1 items, 9 unit + 1 contract cases (incl. 2 authz-negative) — OK
 ```
 
 `--dry-run`: `SPECTEST PLAN (dry-run): would write 10 cases; plan.md unchanged.`
