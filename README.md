@@ -10,6 +10,23 @@ defers to your project `constitution.md` to decide how strict the gates are.
 
 ---
 
+## Installation
+
+```bash
+# From a Spec Kit project root, after `specify init`
+specify extension add --force --from https://github.com/NDViet/speckit-test-extension/archive/refs/heads/master.zip EXTENSION
+```
+
+Or from a local folder (offline / development):
+
+```bash
+specify extension add --dev /path/to/speckit-test-extension
+```
+
+Requires Spec Kit >= 0.8.0.
+
+---
+
 ## Problem
 
 Spec Kit's core workflow produces a rich `spec.md` (prioritized user stories with Acceptance
@@ -246,23 +263,6 @@ SPECTEST QAREVIEW: 4 items, 3 Strong, 1 Blocker -- FAIL
 To clear the blocker: implement the stubbed perf test, then **re-run `/speckit-implement`**
 (its `after_implement` hook fires `qareview` again with the new test results;
 `review.md` refreshes to `Gate: PASS`).
-
----
-
-## Installation
-
-```bash
-# From a Spec Kit project root, after `specify init`
-specify extension add --from https://github.com/NDViet/speckit-test-extension/archive/refs/heads/master.zip
-```
-
-Or from a local folder (offline / development):
-
-```bash
-specify extension add --dev /path/to/speckit-test-extension
-```
-
-Requires Spec Kit >= 0.8.0.
 
 ---
 
